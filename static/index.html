@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f3">
+  <title>PyStep · 从第一行代码开始</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/workbench.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主要导航">
+      <a class="brand" href="#home" aria-label="PyStep 首页"><span class="brand-icon">p<span>↗</span></span><span>PyStep<i>一步一步，写出答案。</i></span></a>
+      <div class="sidebar-label">你的学习空间</div>
+      <nav class="main-nav">
+        <a href="#home" data-nav="home"><span class="nav-icon">▦</span>学习总览</a>
+        <a href="#problems" data-nav="problems"><span class="nav-icon">⌘</span>练习题库<span class="nav-count" id="nav-total">—</span></a>
+        <a href="#favorites" data-nav="favorites"><span class="nav-icon">☆</span>我的收藏</a>
+        <a href="#review" data-nav="review"><span class="nav-icon">↺</span>错题复习</a>
+      </nav>
+      <div class="sidebar-label route-label">学习路线</div>
+      <nav class="phase-nav" aria-label="学习阶段">
+        <a href="#problems?phase=0"><b class="phase-dot mint"></b>Python 基础<span>01</span></a>
+        <a href="#problems?phase=1"><b class="phase-dot purple"></b>常用库与人工智能<span>02</span></a>
+        <a href="#problems?phase=2"><b class="phase-dot peach"></b>复试机考与算法<span>03</span></a>
+        <a href="#problems?phase=3"><b class="phase-dot blue"></b>全栈与工程实践<span>04</span></a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-card"><span class="online-dot"></span><b>在你的电脑上学习</b><p>代码在本机运行，进度保存在<br>当前浏览器。记得定期备份。</p><div><button id="export-progress">导出进度 ↗</button><button id="import-progress">导入</button></div></div>
+        <button class="help-link" id="open-guide"><span>?</span>第一次使用？从这里开始</button>
+      </div>
+    </aside>
+    <div class="main-shell">
+      <header class="topbar"><div class="breadcrumb"><span>学习空间</span><span>/</span><b id="page-label">学习总览</b></div><div class="topbar-right"><span class="runtime-badge" id="runtime-state"><i></i>正在连接本地环境</span><button id="theme-toggle" class="icon-button" aria-label="切换深色模式" title="切换深色模式">◐</button></div></header>
+      <main id="main-content" tabindex="-1"><div class="loading-screen"><span class="spinner"></span><p>正在准备你的学习空间…</p></div></main>
+      <footer class="app-footer"><span>不必一次学会。今天，多写一行就好。</span><span>PyStep · Learn by doing</span></footer>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="guide-dialog" class="guide-dialog">
+    <button class="dialog-close icon-button" id="close-guide" aria-label="关闭入门指南">×</button>
+    <div class="eyebrow">HELLO, FUTURE DEVELOPER</div>
+    <h2>你的第一行代码，从这里开始。</h2>
+    <p class="muted">不用先学完一本书。每一题都有小课堂、分步提示和可运行的参考答案。</p>
+    <ol class="guide-steps"><li><b>先读小课堂，再读题目</b><p>了解这道题会用到的语法，看看输入和预期输出。</p></li><li><b>补全编辑器里的函数</b><p>Python 题通过 <code>solve</code> 接收参数。用 <code>return</code> 返回答案；<code>print</code> 只用于观察，不算返回值。SQL 题写查询，JavaScript 题补全函数。</p></li><li><b>运行示例，观察结果</b><p>点击「运行示例」或按 Ctrl / ⌘ + Enter。比较你的实际输出和预期输出，错误面板会给出定位与建议。</p></li><li><b>提交全部测试，再进入下一题</b><p>示例通过后，点击「提交检查」验证更多边界情况。只有提交通过才计入完成；遇到困难可以逐步展开提示。</p></li></ol>
+    <div class="code-demo"><code>def solve(a, b):<br>&nbsp;&nbsp;&nbsp;&nbsp;return a + b <span># 把结果交给测试程序</span></code></div>
+    <p class="guide-note">从语法到库、算法和工程基础，这是一条循序渐进的入门路线。熟练使用还需要继续做项目与查阅文档。平台运行你输入的代码，请仅运行自己编写或理解的代码。</p>
+    <button class="button primary" id="guide-start">明白了，开始练习 <span>→</span></button>
+  </dialog>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+</body>
+</html>

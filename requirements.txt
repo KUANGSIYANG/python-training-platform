@@ -1,0 +1,5 @@
+# Optional for chapters 14–18. Core platform uses only the standard library.
+numpy>=1.24,<3
+pandas>=1.5,<4
+matplotlib>=3.6,<4
+scikit-learn>=1.1,<2
