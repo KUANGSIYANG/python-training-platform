@@ -1,30 +1,36 @@
 # PyStep implementation contract
 
-Local Python learning app, Chinese, 300 exercises / 30 chapters / 10 per chapter. Standard library HTTP server + vanilla HTML/CSS/JS. No CDN required. Bind 127.0.0.1 only. Python 3.10+.
+Local Python learning app, Chinese, 420 exercises / 42 chapters / 10 per chapter. Standard library HTTP server + vanilla HTML/CSS/JS. No CDN required. Bind 127.0.0.1 only. Python 3.10+. Teach concepts before practice; distinguish completion from independent mastery.
 
-## Expanded scope (latest user request)
-Add curriculum/algorithms.py (chapters 19–24, advanced curriculum agent) and curriculum/web.py (chapters 25–30, root). Dynamic totals everywhere. Chapters 19–24: 机考输入输出与复杂度; 排序与二分查找; 栈、队列与链表; 树、堆与并查集; 图与搜索; 递归、贪心与动态规划. Chapters 25–30: SQL 查询与关系数据库; Python 后端基础; HTTP 与服务器 API; HTML 与 CSS 页面基础; JavaScript 与前端交互; 全栈综合练习.
+## Learning progression
+Chapters 1–9: Python basics; 10–18: standard libraries, scientific computing and AI basics; 19–24: exam algorithms; 25–30: database, backend, HTTP and frontend; 31–36: recruitment algorithm patterns and engineering scenarios; 37–42: real ACM stdin/stdout, advanced data structures, graph algorithms, DP, strings and number theory. Counts and navigation must be dynamic. Preserve existing problem IDs and browser progress.
 
 Problem language defaults to python; can be sql/javascript. SQL setup_sql is trusted CREATE TABLE script; each case args is [{table_name:[row arrays]}], student writes actual SELECT/WITH query, judge returns list of result rows. JavaScript starter defines solve and runs in local Node.js; await async solve allowed. Frontend HTML/CSS exercises use JavaScript solve returning exact HTML/CSS strings, with explicit formatting rules and illustrative syntax lessons; no browser DOM assumed in Node. Requirement `node` available in meta. Never pretend string exercises are full browser rendering checks. API demo endpoints: GET /api/demo/items?q=&limit=, GET /api/demo/items/<id>, POST /api/demo/echo. Real browser frontend itself calls backend via fetch. Additional language code execution remains local trusted-code only.
 
 ## Curriculum
-`curriculum/beginner.py` exports `PROBLEMS` chapters 1–9, root agent owns it.
-`curriculum/advanced.py` exports `PROBLEMS` chapters 10–18, curriculum agent owns it.
+Every curriculum module exports `PROBLEMS`: `beginner.py` (1–9), `advanced.py` (10–18), `algorithms.py` (19–24), `web.py` (25–30), `recruitment.py` (31–36), `competitive.py` (37–42).
+`competitive.py` aggregates its chapters 37–38 with `competitive_graph_dp.py` (39–40) and `competitive_strings_math.py` (41–42).
 `curriculum/schema.py` supplies `problem(chapter, number, title, concept, description, parameters, tests, solution, hints, explanation, difficulty='入门', requires=None, starter=None)`.
 Each parameter is `(name, type_text, description)`. Each test is `(args_list, expected)`; use first 2 tests as visible examples and at least 5 tests per exercise. Helper builds integer id `(chapter-1)*10+number`, chapter info, tags, `starter` with `def solve(params):`, `tests=[{args, expected}]`, `examples=tests[:2]`. Solution is Python code defining `solve` with those same parameters. All input / expected values JSON serializable. Tests deterministic. Avoid mutable shared globals and test file system side effects. Advanced modules return ordinary JSON compatible Python values. Dependencies are package import names (`numpy`, `pandas`, `matplotlib`, `sklearn`).
 
 Problem keys: id, chapter, chapter_title, title, concept (mini syntax lesson, multiline Markdown text), description (task with precise edge-case rules), parameters (array {name,type,description}), difficulty, tags (chapter name + dependency names), requires, starter, tests, examples, hints (3 progressive Chinese strings), solution (complete code), explanation (Chinese solution walkthrough).
 
+New advanced problems also supply `learning_goal`, `prerequisites` (earlier chapter IDs), `skills`, `track`, and `complexity:{time,space}`. At least seven deterministic cases per new problem, with edge cases and representative scale cases. Reference explanation includes a correctness argument and common mistake. All stated constraints must agree with examples and tests.
+
+`execution_mode` defaults to `function`. `acm_problem(...)` builds `execution_mode:'stdin'` Python tasks: cases are `{stdin:string,expected:string}` and parameters is empty. Solution is a complete script, with fresh `sys.stdin` and `__main__` for each case; `sys.stdin.buffer` works. Comparison splits whitespace and compares tokens exactly; whitespace layout is ignored, floating text is not coerced. Capture stderr separately. Custom runs never count as accepted submissions. stdin length <=64 KB, code <=64 KB, stdout <=12000 characters per case, combined worker result <=512 KB, one submission suite <=12 seconds wall time. These are local practice limits, not contest performance guarantees.
+
 Chapters: 1 值、变量与运算; 2 条件判断; 3 循环与累积; 4 字符串; 5 列表与元组; 6 字典与集合; 7 函数与参数; 8 推导式与迭代器; 9 异常、文件与数据格式; 10 类、模块与类型提示; 11 collections、itertools 与 functools; 12 数学、时间与随机数; 13 正则、路径与数据库; 14 NumPy 数组基础; 15 NumPy 计算与线性代数; 16 pandas 表格基础; 17 pandas 数据分析; 18 可视化与机器学习入门.
 
 ## HTTP API
-GET `/api/problems`: `{problems:[all problem fields except tests,solution,explanation,hints,concept,starter],chapters:[{id,title,count}],total:180}` (parameters/examples can remain).
+GET `/api/problems`: `{problems:[all problem fields except tests,solution,explanation,hints,concept,starter],chapters:[{id,title,count}],total:420}` (parameters/examples can remain; total computed from loaded modules).
 GET `/api/problems/<int>`: all fields except `tests` (has hints, solution, explanation).
 GET `/api/meta`: `{python,dependencies:{numpy:{available,version},pandas:...,matplotlib:...,sklearn:...},execution_timeout:12}`.
-POST `/api/run`: `{problem_id:int, code:string, mode:'run'|'submit', custom_args?:array}`. Run checks 2 public examples (or one custom args if provided); submit checks all tests. Custom expected unknown: passed true if no exception and label '执行成功', not submission success.
+POST `/api/run`: `{problem_id:int, code:string, mode:'run'|'submit'|'trace', custom_args?:array, custom_stdin?:string}`. Run checks 2 public examples or a custom case. Use custom_args for function/SQL/JS problems, custom_stdin for ACM. Submit always checks all tests, ignoring custom input. Custom expected unknown: passed true if no exception and label '执行成功', not submission success. Trace is Python-only, executes the first example or custom case and records up to 160 events / 64 KB: `{line,event,function,locals,value?,exception?}`. Line events show state BEFORE execution, return events show returned values. Capture only user-file frames, preview plain builtins without invoking user repr, truncate oversized values, continue execution after recording limit. Frontend replays these events; this is not an interactive debugger and never counts toward completion.
 Response `{status:'accepted'|'wrong_answer'|'syntax_error'|'runtime_error'|'timeout'|'missing_dependency'|'error',passed:int,total:int,cases:[{passed,args,expected,actual,stdout,error?}],error?:{type,message,line,hint,traceback},duration_ms:number,mode}`. Case custom may have expected null + custom true. Top-level `error` object or null. HTTP 400 invalid body, 404 invalid problem, 429 busy. Limit output/body/code and wall-clock; show helpful Chinese error hints and user-code line numbers. Do not advertise as sandbox.
 
 Frontend localStorage tracks drafts by problem id, accepted ids, attempts, notes, starred, theme. Curriculum browsing, chapter filter/search/difficulty/status, roadmap/dashboard, detail lessons, hints/answers, code editing with line numbers/tab indentation/Ctrl+Enter, run/submit/results, reset code, custom JSON argument array input, progress export/import, keyboard navigation, responsive and accessible. Keep all UI Chinese.
 
-## Ownership
-Frontend agent: `static/` only. Backend agent: `server.py`, `runner.py`, `verify.py`, `tests/` only. Curriculum agent: `curriculum/advanced.py` only. Root: schema, beginner, docs, start scripts, integration fixes.
+Keep the version-1 storage key and validate/migrate optional new fields: submission snapshots (80 / 600000 code characters), daily activity, assistance flags, learning checkpoints, editor settings, current timed session, and up to 12 archived sessions. Timers persist absolute deadlines. Count only submissions initiated during the session, never historical accepted IDs. Keep assisted and independent results distinct. Import/reset invalidates pending run callbacks so late responses cannot modify replaced progress. Ctrl/Cmd K searches pages, problem IDs and skills. Preserve drafts across navigation.
+
+## Verification
+`python -X utf8 verify.py` verifies the full curriculum; `--chapter N` verifies a chapter. `python -X utf8 -m unittest discover -s tests -v` checks judge and HTTP behavior. Check browser navigation, old progress migration, real submissions, countdown persistence, code restoration and mobile overflow when changing frontend state flows. Keep home credit `Contributed by ksy`.

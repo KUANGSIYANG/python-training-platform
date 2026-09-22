@@ -29,6 +29,63 @@ MAX_CODE_BYTES = 64 * 1024
 MAX_STDOUT_CHARS = 12000
 MAX_RESULT_BYTES = 512 * 1024
 USER_FILENAME = "你的代码.py"
+MAX_TRACE_STEPS = 160
+
+
+def trace_value(value, depth=0):
+    """Bounded plain built-in previews; never call a learner's custom __repr__."""
+    kind = type(value)
+    if value is None or kind in (bool, int, float, str):
+        if kind is int and value.bit_length() > 1000:
+            return '<整数，超过 1000 位二进制>'
+        return repr(value[:160] if kind is str else value)[:180]
+    if depth < 2 and kind in (list, tuple, dict, set, frozenset):
+        if kind is dict:
+            parts = [f'{trace_value(k, depth+1)}: {trace_value(v, depth+1)}' for _, (k, v) in zip(range(6), value.items())]
+            opening, closing = '{', '}'
+        else:
+            parts = [trace_value(v, depth+1) for _, v in zip(range(6), value)]
+            opening, closing = ('[', ']') if kind is list else ('(', ')') if kind is tuple else ('{', '}')
+        if len(value) > 6:
+            parts.append('…')
+        return (opening + ', '.join(parts) + closing)[:300]
+    return f'<{kind.__name__}>'
+
+
+def make_tracer(events, trace_state, include_module=False):
+    def trace(frame, event, arg):
+        if frame.f_code.co_filename != USER_FILENAME:
+            return None
+        if not include_module and frame.f_code.co_name == '<module>':
+            return None
+        if event not in {'line', 'return', 'exception'}:
+            return trace
+        if len(events) >= MAX_TRACE_STEPS:
+            trace_state['truncated'] = True
+            sys.settrace(None)
+            return None
+        local_values = {}
+        for name, value in frame.f_locals.items():
+            if name.startswith('__') or isinstance(value, (types.ModuleType, types.FunctionType, type)):
+                continue
+            local_values[name[:80]] = trace_value(value)
+            if len(local_values) >= 12:
+                break
+        entry = {'line': frame.f_lineno, 'event': event, 'function': frame.f_code.co_name,
+                 'locals': local_values}
+        if event == 'return':
+            entry['value'] = trace_value(arg)
+        elif event == 'exception':
+            entry['exception'] = arg[0].__name__
+        size = len(json.dumps(entry, ensure_ascii=False).encode('utf-8'))
+        if trace_state.get('bytes', 0) + size > 64000:
+            trace_state['truncated'] = True
+            sys.settrace(None)
+            return None
+        trace_state['bytes'] = trace_state.get('bytes', 0) + size
+        events.append(entry)
+        return trace
+    return trace
 
 
 def load_practice_support():
@@ -121,6 +178,61 @@ def equivalent(actual, expected):
     return type(actual) is type(expected) and actual == expected
 
 
+def mismatch_hint(actual, expected, path='结果'):
+    """Point to the first observable mismatch without guessing the algorithm."""
+    if type(actual) is not type(expected) and not (
+        type(actual) in (int, float) and type(expected) in (int, float)
+    ):
+        return f'{path}的类型应为 {type(expected).__name__}，实际为 {type(actual).__name__}。'
+    if isinstance(actual, list) and isinstance(expected, list):
+        if len(actual) != len(expected):
+            return f'{path}应有 {len(expected)} 个元素，实际有 {len(actual)} 个；检查遗漏、重复与边界。'
+        for index, (a, e) in enumerate(zip(actual, expected)):
+            if not equivalent(a, e):
+                return mismatch_hint(a, e, f'{path}[{index}]')
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        if actual.keys() != expected.keys():
+            return f'{path}的字段不一致；检查缺少或多余的键。'
+        for key in expected:
+            if not equivalent(actual[key], expected[key]):
+                return mismatch_hint(actual[key], expected[key], f'{path}[{key!r}]')
+    return f'{path}与预期不一致；用当前输入逐步检查中间值，并留意空输入、重复值和边界。'
+
+
+def compare_stdout(actual, expected):
+    """ACM token comparison: whitespace is flexible, token spelling is exact."""
+    actual_tokens, expected_tokens = actual.split(), expected.split()
+    for index, (a, e) in enumerate(zip(actual_tokens, expected_tokens), 1):
+        if a != e:
+            return False, f'第 {index} 个输出项不同：预期 {e[:80]!r}，实际 {a[:80]!r}。检查计算和输出顺序。'
+    if len(actual_tokens) != len(expected_tokens):
+        return False, f'应输出 {len(expected_tokens)} 项，实际输出 {len(actual_tokens)} 项。检查漏输出或多余调试信息；调试请写到 sys.stderr。'
+    return True, ''
+
+
+def run_stdin_program(compiled, stdin):
+    previous_stdin, previous_argv = sys.stdin, sys.argv
+    previous_main = sys.modules.get('__main__')
+    stream = io.TextIOWrapper(io.BytesIO(stdin.encode('utf-8')), encoding='utf-8')
+    module = types.ModuleType('__main__')
+    module.__file__ = USER_FILENAME
+    try:
+        sys.stdin, sys.argv = stream, [USER_FILENAME]
+        sys.modules['__main__'] = module
+        try:
+            exec(compiled, module.__dict__)
+        except SystemExit as exc:
+            if exc.code is not None and exc.code != 0:
+                raise
+    finally:
+        sys.stdin, sys.argv = previous_stdin, previous_argv
+        if previous_main is None:
+            sys.modules.pop('__main__', None)
+        else:
+            sys.modules['__main__'] = previous_main
+        stream.close()
+
+
 def error_details(exc):
     line = exc.lineno if isinstance(exc, SyntaxError) else None
     frames = traceback.extract_tb(exc.__traceback__) if exc.__traceback__ else []
@@ -194,6 +306,9 @@ def evaluate(payload):
     result = {"status": "accepted", "passed": 0, "total": len(cases), "cases": [],
               "error": None, "duration_ms": 0, "mode": payload.get("mode", "run")}
     language = payload.get("language", "python")
+    stdin_mode = payload.get('execution_mode') == 'stdin'
+    trace_mode = payload.get('mode') == 'trace' and language == 'python'
+    result['execution_mode'] = 'stdin' if stdin_mode else 'function'
     try:
         compiled = compile(payload["code"], USER_FILENAME, "exec", dont_inherit=True) if language == "python" else None
     except (SyntaxError, ValueError) as exc:
@@ -201,16 +316,26 @@ def evaluate(payload):
         result["duration_ms"] = round((time.monotonic() - started) * 1000)
         return result
     for case in cases:
+        case_started = time.monotonic()
         output = LimitedOutput()
+        diagnostic_output = LimitedOutput() if stdin_mode else output
+        trace_events, trace_state = [], {'truncated': False}
+        previous_trace = sys.gettrace()
         previous_module = sys.modules.get("__learner__")
-        record = {"passed": False, "args": copy.deepcopy(case["args"]),
+        record = {"passed": False,
                   "expected": case.get("expected"), "actual": None, "stdout": ""}
+        record.update({'stdin': case['stdin']} if stdin_mode else {'args': copy.deepcopy(case['args'])})
         if case.get("custom"):
             record["custom"] = True
         try:
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(diagnostic_output):
+                if trace_mode:
+                    sys.settrace(make_tracer(trace_events, trace_state, include_module=stdin_mode))
                 # Fresh globals prevent one test from leaking variables into the next.
-                if language == "sql":
+                if stdin_mode:
+                    run_stdin_program(compiled, case['stdin'])
+                    actual = output.getvalue()
+                elif language == "sql":
                     actual = sql_result(payload["code"], copy.deepcopy(case["args"]), payload.get("setup_sql", ""))
                 else:
                     module = types.ModuleType("__learner__")
@@ -227,13 +352,24 @@ def evaluate(payload):
                         actual.close()
                     raise TypeError("本题需要普通 def solve(...) 函数，请移除 async。")
                 record["actual"] = normalize(actual)
-                record["passed"] = bool(case.get("custom")) or equivalent(record["actual"], case.get("expected"))
+                if stdin_mode and not case.get('custom'):
+                    record['passed'], hint = compare_stdout(actual, case['expected'])
+                    if hint:
+                        record['hint'] = hint
+                else:
+                    record["passed"] = bool(case.get("custom")) or equivalent(record["actual"], case.get("expected"))
                 if case.get("custom"):
                     record["label"] = "执行成功"
-                if not record["passed"] and actual is None and case.get("expected") is not None:
-                    record["hint"] = "函数返回了 None。print() 只负责显示，请用 return 返回答案；也检查是否有分支漏写 return。"
+                if not record['passed'] and not stdin_mode:
+                    record['hint'] = mismatch_hint(record['actual'], case.get('expected'))
+                    if actual is None and case.get("expected") is not None:
+                        record["hint"] = "函数返回了 None。print() 只负责显示，请用 return 返回答案；也检查是否有分支漏写 return。"
         except BaseException as exc:
             details = error_details(exc)
+            if stdin_mode and isinstance(exc, EOFError):
+                details['hint'] = '标准输入已读完；检查是否多调用了 input()，以及测试组数 T、数组长度 n 的读取位置。'
+            elif stdin_mode and isinstance(exc, SystemExit):
+                details['hint'] = '程序以非零退出码结束；请检查主动退出的位置，正常完成时不需要调用 exit()。'
             if language == "sql":
                 details["hint"] = "检查表名、列名、SELECT / WHERE / GROUP BY / ORDER BY 的顺序。这里只允许一条只读查询；结果行顺序需符合题意。"
                 if "not authorized" in str(exc) or "authorization denied" in str(exc):
@@ -244,11 +380,19 @@ def evaluate(payload):
             if language == "sql" and "syntax error" in str(exc).lower():
                 result["status"] = "syntax_error"
         finally:
+            if trace_mode:
+                sys.settrace(previous_trace)
             if previous_module is None:
                 sys.modules.pop("__learner__", None)
             else:
                 sys.modules["__learner__"] = previous_module
         record["stdout"] = output.getvalue()
+        record['duration_ms'] = round((time.monotonic() - case_started) * 1000, 2)
+        if stdin_mode:
+            record['stderr'] = diagnostic_output.getvalue()
+        if trace_mode:
+            record['trace'] = trace_events
+            record['trace_truncated'] = trace_state['truncated']
         result["cases"].append(record)
         if record["passed"]:
             result["passed"] += 1
@@ -266,11 +410,11 @@ def failure(status, kind, message, hint, total, mode, elapsed):
             "error": {"type": kind, "message": message, "hint": hint, "line": None, "traceback": ""}}
 
 
-def execute(code, cases, mode="run", timeout=EXECUTION_TIMEOUT, language="python", setup_sql=""):
+def execute(code, cases, mode="run", timeout=EXECUTION_TIMEOUT, language="python", setup_sql="", execution_mode="function"):
     """Enforce wall timeout and bounded pipe reads even for raw os.write output."""
     started = time.monotonic()
     payload = json.dumps({"code": code, "cases": cases, "mode": mode, "language": language,
-                          "setup_sql": setup_sql}, ensure_ascii=False).encode("utf-8")
+                          "setup_sql": setup_sql, 'execution_mode': execution_mode}, ensure_ascii=False).encode("utf-8")
     if language == "javascript":
         node = shutil.which("node")
         if not node:
@@ -318,7 +462,7 @@ def execute(code, cases, mode="run", timeout=EXECUTION_TIMEOUT, language="python
             process.kill()
             process.wait(timeout=3)
             return failure("timeout", "TimeoutError", f"执行超过 {timeout:g} 秒，已停止。",
-                           "检查 while 循环是否更新变量、递归是否结束；也可以先减少输入规模。", len(cases), mode,
+                           "检查循环更新、递归终止条件与算法复杂度；先用较小的自定义输入定位，再对照题目规模优化。", len(cases), mode,
                            time.monotonic() - started)
         except BrokenPipeError:
             process.wait(timeout=timeout)

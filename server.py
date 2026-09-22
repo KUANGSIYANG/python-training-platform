@@ -35,7 +35,9 @@ def load_problems():
     from curriculum.advanced import PROBLEMS as advanced
     from curriculum.algorithms import PROBLEMS as algorithms
     from curriculum.web import PROBLEMS as web
-    problems = sorted(beginner + advanced + algorithms + web, key=lambda p: p["id"])
+    from curriculum.recruitment import PROBLEMS as recruitment
+    from curriculum.competitive import PROBLEMS as competitive
+    problems = sorted(beginner + advanced + algorithms + web + recruitment + competitive, key=lambda p: p["id"])
     ids = [p["id"] for p in problems]
     if len(ids) != len(set(ids)):
         raise ValueError("题目编号重复")
@@ -65,6 +67,7 @@ def dependency_info():
     return {"python": sys.version.split()[0], "dependencies": dependencies,
             "execution_timeout": EXECUTION_TIMEOUT, "sqlite": __import__("sqlite3").sqlite_version,
             "languages": ["python", "sql", "javascript"],
+            'execution_modes': ['function', 'stdin'], 'acm_output_comparison': 'tokens',
             "demo_api": [{"method": "GET", "path": "/api/demo/items?q=Python&limit=2", "description": "按名称筛选商品；total 是筛选后、截取前的数量。"},
                          {"method": "GET", "path": "/api/demo/items/1", "description": "按 id 获取商品；不存在返回 404。"},
                          {"method": "POST", "path": "/api/demo/echo", "description": "发送 JSON，返回 {received: 原始 JSON}。"}]}
@@ -93,7 +96,7 @@ class LearningServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PyStep/1.0"
+    server_version = "PyStep/2.0"
 
     def setup(self):
         super().setup()
@@ -261,10 +264,26 @@ class Handler(BaseHTTPRequestHandler):
         if not valid_code:
             self.fail(400, f"请填写代码，且代码不得超过 {MAX_CODE_BYTES // 1024} KB。")
             return
-        if not isinstance(mode, str) or mode not in {"run", "submit"}:
-            self.fail(400, "mode 必须为 run 或 submit。")
+        if not isinstance(mode, str) or mode not in {"run", "submit", "trace"}:
+            self.fail(400, "mode 必须为 run、submit 或 trace。")
             return
-        if "custom_args" in payload and mode == "run":
+        if mode == 'trace' and problem.get('language', 'python') != 'python':
+            self.fail(400, '逐步观察目前支持 Python 题。')
+            return
+        execution_mode = problem.get('execution_mode', 'function')
+        if mode != 'submit' and execution_mode == 'stdin' and 'custom_args' in payload:
+            self.fail(400, 'ACM 题请使用 custom_stdin 传入标准输入文本。')
+            return
+        if mode != 'submit' and execution_mode != 'stdin' and 'custom_stdin' in payload:
+            self.fail(400, '函数题请使用 custom_args 传入参数数组。')
+            return
+        if 'custom_stdin' in payload and mode != 'submit':
+            stdin = payload['custom_stdin']
+            if not isinstance(stdin, str) or len(stdin.encode('utf-8')) > 64 * 1024:
+                self.fail(400, '标准输入必须是字符串，且不能超过 64 KB。')
+                return
+            cases = [{'stdin': stdin, 'expected': None, 'custom': True}]
+        elif "custom_args" in payload and mode != 'submit':
             args = payload["custom_args"]
             if not isinstance(args, list) or len(args) != len(problem["parameters"]):
                 self.fail(400, f"自定义输入必须是 JSON 数组，包含 {len(problem['parameters'])} 个参数，顺序与 solve 一致。")
@@ -272,11 +291,15 @@ class Handler(BaseHTTPRequestHandler):
             cases = [{"args": args, "expected": None, "custom": True}]
         else:
             cases = copy.deepcopy(problem["tests"] if mode == "submit" else problem["examples"])
+        if mode == 'trace':
+            cases = cases[:1]
         if not self.server.run_slots.acquire(blocking=False):
             self.fail(429, "已有两份代码正在运行，请稍后重试。")
             return
         try:
-            result = execute(code, cases, mode, language=problem.get("language", "python"), setup_sql=problem.get("setup_sql", ""))
+            result = execute(code, cases, mode, language=problem.get("language", "python"),
+                             setup_sql=problem.get("setup_sql", ""), execution_mode=execution_mode)
+            result.setdefault('execution_mode', execution_mode)
             self.reply(200, result)
         except Exception:
             self.fail(500, "执行服务暂时出错，请重试或重新启动平台。")

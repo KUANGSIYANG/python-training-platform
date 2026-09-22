@@ -7,6 +7,7 @@
   <title>PyStep · 从第一行代码开始</title>
   <link rel="stylesheet" href="/static/styles.css">
   <link rel="stylesheet" href="/static/workbench.css">
+  <link rel="stylesheet" href="/static/learning.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
@@ -17,9 +18,12 @@
       <div class="sidebar-label">你的学习空间</div>
       <nav class="main-nav">
         <a href="#home" data-nav="home"><span class="nav-icon">▦</span>学习总览</a>
+        <a href="#roadmap" data-nav="roadmap"><span class="nav-icon">⌁</span>学习路线</a>
         <a href="#problems" data-nav="problems"><span class="nav-icon">⌘</span>练习题库<span class="nav-count" id="nav-total">—</span></a>
         <a href="#favorites" data-nav="favorites"><span class="nav-icon">☆</span>我的收藏</a>
         <a href="#review" data-nav="review"><span class="nav-icon">↺</span>错题复习</a>
+        <a href="#training" data-nav="training"><span class="nav-icon">◷</span>限时训练</a>
+        <a href="#history" data-nav="history"><span class="nav-icon">≡</span>提交记录</a>
       </nav>
       <div class="sidebar-label route-label">学习路线</div>
       <nav class="phase-nav" aria-label="学习阶段">
@@ -27,6 +31,8 @@
         <a href="#problems?phase=1"><b class="phase-dot purple"></b>常用库与人工智能<span>02</span></a>
         <a href="#problems?phase=2"><b class="phase-dot peach"></b>复试机考与算法<span>03</span></a>
         <a href="#problems?phase=3"><b class="phase-dot blue"></b>全栈与工程实践<span>04</span></a>
+        <a href="#problems?phase=4"><b class="phase-dot peach"></b>秋招算法与面试<span>05</span></a>
+        <a href="#problems?phase=5"><b class="phase-dot purple"></b>ACM 竞赛进阶<span>06</span></a>
       </nav>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="online-dot"></span><b>在你的电脑上学习</b><p>代码在本机运行，进度保存在<br>当前浏览器。记得定期备份。</p><div><button id="export-progress">导出进度 ↗</button><button id="import-progress">导入</button></div></div>
@@ -34,7 +40,7 @@
       </div>
     </aside>
     <div class="main-shell">
-      <header class="topbar"><div class="breadcrumb"><span>学习空间</span><span>/</span><b id="page-label">学习总览</b></div><div class="topbar-right"><span class="runtime-badge" id="runtime-state"><i></i>正在连接本地环境</span><button id="theme-toggle" class="icon-button" aria-label="切换深色模式" title="切换深色模式">◐</button></div></header>
+      <header class="topbar"><div class="breadcrumb"><span>学习空间</span><span>/</span><b id="page-label">学习总览</b></div><div class="topbar-right"><button class="command-trigger" data-action="palette" aria-label="搜索题目与命令，Ctrl K">⌕ <span>搜索与跳转</span><kbd>Ctrl K</kbd></button><a id="session-indicator" href="#training" hidden></a><span class="runtime-badge" id="runtime-state"><i></i>正在连接本地环境</span><button id="theme-toggle" class="icon-button" aria-label="切换深色模式" title="切换深色模式">◐</button></div></header>
       <main id="main-content" tabindex="-1"><div class="loading-screen"><span class="spinner"></span><p>正在准备你的学习空间…</p></div></main>
       <footer class="app-footer"><span>不必一次学会。今天，多写一行就好。</span><span>PyStep · Learn by doing</span></footer>
     </div>
@@ -45,11 +51,12 @@
     <div class="eyebrow">HELLO, FUTURE DEVELOPER</div>
     <h2>你的第一行代码，从这里开始。</h2>
     <p class="muted">不用先学完一本书。每一题都有小课堂、分步提示和可运行的参考答案。</p>
-    <ol class="guide-steps"><li><b>先读小课堂，再读题目</b><p>了解这道题会用到的语法，看看输入和预期输出。</p></li><li><b>补全编辑器里的函数</b><p>Python 题通过 <code>solve</code> 接收参数。用 <code>return</code> 返回答案；<code>print</code> 只用于观察，不算返回值。SQL 题写查询，JavaScript 题补全函数。</p></li><li><b>运行示例，观察结果</b><p>点击「运行示例」或按 Ctrl / ⌘ + Enter。比较你的实际输出和预期输出，错误面板会给出定位与建议。</p></li><li><b>提交全部测试，再进入下一题</b><p>示例通过后，点击「提交检查」验证更多边界情况。只有提交通过才计入完成；遇到困难可以逐步展开提示。</p></li></ol>
+    <ol class="guide-steps"><li><b>先学概念，再拆示例</b><p>沿学习路线查看目标与先修知识。每题按「学概念 → 拆示例 → 引导练习 → 独立提交」推进。</p></li><li><b>根据题型编写程序</b><p>函数题补全 <code>solve</code> 并 <code>return</code> 答案。ACM 标准输入题读取 <code>input()</code> 或 <code>sys.stdin.buffer</code>，用 <code>print()</code> 输出；页面会标明模式。SQL 题写查询。</p></li><li><b>运行示例，观察反馈</b><p>Ctrl / ⌘ + Enter 运行，Ctrl / ⌘ + Shift + Enter 提交。失败时比较输入与输出，查看错误定位，回到概念再试。</p></li><li><b>独立练习，再用限时训练检验</b><p>提交通过计入完成。历史保存代码快照；秋招与 ACM 训练提供持续倒计时和本场提交统计。熟练度需要迁移练习与长期复盘，不由做题数量保证。</p></li></ol>
     <div class="code-demo"><code>def solve(a, b):<br>&nbsp;&nbsp;&nbsp;&nbsp;return a + b <span># 把结果交给测试程序</span></code></div>
     <p class="guide-note">从语法到库、算法和工程基础，这是一条循序渐进的入门路线。熟练使用还需要继续做项目与查阅文档。平台运行你输入的代码，请仅运行自己编写或理解的代码。</p>
     <button class="button primary" id="guide-start">明白了，开始练习 <span>→</span></button>
   </dialog>
+  <dialog id="command-dialog" class="command-dialog" aria-labelledby="command-title"><div class="command-heading"><label id="command-title" for="command-search">搜索题目、章节与页面</label><button class="icon-button" data-action="close-palette" aria-label="关闭搜索">×</button></div><input id="command-search" class="field" type="search" placeholder="输入题号、知识点，或「限时训练」" autocomplete="off"><div id="command-results" class="command-results"></div><p class="muted command-help">↑ ↓ 选择 · Enter 打开 · Esc 关闭</p></dialog>
   <input id="import-file" type="file" accept="application/json,.json" hidden>
 </body>
 </html>

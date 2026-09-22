@@ -17,20 +17,23 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-from runner import evaluate
+from runner import evaluate, execute
 from server import load_problems
+from curriculum.schema import CHAPTERS
 
 
-def verify(problems, expected_count=300):
+def verify(problems, expected_count=None, isolated=False):
+    if expected_count is None:
+        expected_count = len(CHAPTERS) * 10
     errors = []
     if len(problems) != expected_count:
         errors.append(f"题目数量应为 {expected_count}，实际为 {len(problems)}")
     counts = Counter(problem["chapter"] for problem in problems)
-    if expected_count == 300 and counts != Counter({n: 10 for n in range(1, 31)}):
+    if expected_count == len(CHAPTERS) * 10 and counts != Counter({n: 10 for n in range(1, len(CHAPTERS) + 1)}):
         errors.append(f"每章应有 10 题，实际为 {dict(counts)}")
     ids = [problem["id"] for problem in problems]
-    if expected_count == 300 and ids != list(range(1, 301)):
-        errors.append("题目编号应按顺序覆盖 1—300")
+    if expected_count == len(CHAPTERS) * 10 and ids != list(range(1, expected_count + 1)):
+        errors.append(f"题目编号应按顺序覆盖 1—{expected_count}")
     test_count = 0
     javascript = []
     for problem in problems:
@@ -47,9 +50,25 @@ def verify(problems, expected_count=300):
                 if not problem[key].strip():
                     errors.append(f"{label}：{key} 不能为空")
             for case in problem["tests"]:
-                if len(case["args"]) != len(problem["parameters"]):
+                if problem.get('execution_mode') == 'stdin':
+                    if not isinstance(case.get('stdin'), str) or not isinstance(case.get('expected'), str):
+                        errors.append(f'{label}：ACM 测试输入与输出必须是字符串')
+                elif len(case["args"]) != len(problem["parameters"]):
                     errors.append(f"{label}：测试参数个数不正确")
+            if problem['id'] > 300:
+                if not problem.get('learning_goal') or not problem.get('skills'):
+                    errors.append(f'{label}：缺少学习目标或技能标签')
+                if len(problem['tests']) < 7:
+                    errors.append(f'{label}：进阶题需要至少 7 个测试')
+                if not problem.get('complexity', {}).get('time') or not problem.get('complexity', {}).get('space'):
+                    errors.append(f'{label}：缺少时间或空间复杂度')
+                if any(type(n) is not int or not 1 <= n < problem['chapter'] for n in problem.get('prerequisites', [])):
+                    errors.append(f'{label}：前置章节必须在当前章之前')
             language = problem.get("language", "python")
+            execution_mode = problem.get('execution_mode', 'function')
+            if execution_mode not in {'function', 'stdin'} or (execution_mode == 'stdin' and language != 'python'):
+                errors.append(f'{label}：无效的执行模式')
+                continue
             if language not in {"python", "sql", "javascript"}:
                 errors.append(f"{label}：不支持的语言 {language}")
                 continue
@@ -59,8 +78,10 @@ def verify(problems, expected_count=300):
                 continue
             if language == "python":
                 compile(problem["starter"], f"starter-{problem['id']}", "exec")
-            result = evaluate({"code": problem["solution"], "cases": copy.deepcopy(problem["tests"]), "mode": "submit",
-                               "language": language, "setup_sql": problem.get("setup_sql", "")})
+            payload = {"code": problem["solution"], "cases": copy.deepcopy(problem["tests"]), "mode": "submit",
+                       "language": language, "setup_sql": problem.get("setup_sql", ""),
+                       'execution_mode': execution_mode}
+            result = execute(**payload) if isolated else evaluate(payload)
             test_count += result["total"]
             if result["status"] != "accepted":
                 bad = [case for case in result["cases"] if not case["passed"]]
@@ -96,6 +117,8 @@ def verify(problems, expected_count=300):
 def main():
     parser = argparse.ArgumentParser(description="检查题库结构与全部参考答案")
     parser.add_argument("--chapter", type=int, help="只检查某一章")
+    parser.add_argument('--track', choices=['recruitment', 'acm'], help='只检查秋招或 ACM 进阶题')
+    parser.add_argument('--isolated', action='store_true', help='Python / SQL 参考答案使用真实子进程、超时和输出上限')
     args = parser.parse_args()
     started = time.monotonic()
     try:
@@ -103,12 +126,15 @@ def main():
     except ImportError as exc:
         print(f"题库尚未完整生成或导入失败：{exc}")
         return 1
+    if args.track:
+        problems = [p for p in problems if p.get('track') == args.track]
     if args.chapter is not None:
         problems = [p for p in problems if p["chapter"] == args.chapter]
         if not problems:
             print("没有找到该章节。")
             return 1
-    errors, tests = verify(problems, 10 if args.chapter is not None else 300)
+    expected = 10 if args.chapter is not None else (60 if args.track else None)
+    errors, tests = verify(problems, expected, isolated=args.isolated)
     for error in errors:
         print(error)
     print(f"已检查 {len(problems)} 道题、{tests} 个测试，错误 {len(errors)} 个，用时 {time.monotonic() - started:.2f} 秒。")
